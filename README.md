@@ -1,6 +1,6 @@
 # evewatch
 
-Prototype asyncio python based eveonline chat log file parser 
+Prototype of an asyncio python based eveonline chat log file parser 
 
 
 ## features 

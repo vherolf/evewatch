@@ -6,6 +6,9 @@ import re
 import asyncio_mqtt as aiomqtt
 import paho.mqtt as mqtt
 
+# changed the first time you jump to another system
+current_solarsystem = 'BK4-YC'
+
 today = datetime.now()
 chatlogdir = list(Path.home().rglob( 'EVE/logs/Chatlogs' )).pop()
 # chat channel you wanna check
@@ -27,8 +30,7 @@ async def mqtttrigger(plug="plug3"):
                               password="mqttmqtt") as client:
         await client.publish(f"eve/{plug}", payload=f"TOGGLE")
 
-## this function is from https://github.com/andrewpmartinez/py-eve-chat-mon
-## thank you !
+## this function is from https://github.com/andrewpmartinez/py-eve-chat-mon (THANK YOU!)
 async def parse_msg(msg):
     line_parser = re.compile('^\s*\[\s(.*?)\s\]\s(.*?)\s>\s(.*?)$', re.DOTALL)
     match = line_parser.match(msg)
@@ -52,7 +54,7 @@ chat_line_delimiter = u"\ufeff"
 async def parselog( log ):
     # eve log files are utf-16 encoded
     async with aiofiles.open(log, mode='r',encoding="utf-16-le") as f:
-        # dont like this code much - it reads always
+        # dont like this code much - I needed to add the sleep
         # nicer would be if aiofile would not exit on EOL 
         # and would work without a context manager
         while True:
@@ -64,7 +66,7 @@ async def parselog( log ):
             if contents:
                 parsed_msg = await parse_msg(contents)
                 if parsed_msg:
-                    print(parsed_msg['timestamp'], parsed_msg['username'],parsed_msg['message'])
+                    print(parsed_msg['timestamp'], parsed_msg['username'],'>',parsed_msg['message'])
                     solarsystem =[name for name in solarsystemlist if name in parsed_msg['message']]
                     if solarsystem:
                         print(f'RUN .. enemy in {solarsystem}')
@@ -73,6 +75,11 @@ async def parselog( log ):
                     if user:
                         print(f"The Pilot {parsed_msg['username']} wants to talk to you")
                         await mqtttrigger('plug4')
+                    if parsed_msg['username'] == "EVE System":
+                        system_change = parsed_msg['message'].find('Channel changed to Local :')
+                        if system_change != '-1':
+                            current_solarsystem = parsed_msg['message'].split(':')[1]
+                            print(f'You are in {current_solarsystem} now')
           
 async def main():
     tasks = []        
