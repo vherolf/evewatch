@@ -50,19 +50,23 @@ async def parse_msg(msg):
 
     return None
 
+# Filter: fires every time you pass a stargate and sets your current solar system
 async def system_locator_filter(parsed_msg):
     if parsed_msg['username'] == "EVE System":
         system_change = parsed_msg['message'].find('Channel changed to Local :')
         if system_change != '-1':
             current_solarsystem = parsed_msg['message'].split(':')[1]
-            print(f'You are in {current_solarsystem} now')
+            print(f'You just jumped to {current_solarsystem}')
 
+# Filter: fires if someone mention you in a chat
 async def name_filter(parsed_msg):
     user = [name for name in usernames if name in parsed_msg['message'].upper()]
     if user:
         print(f"The Pilot {parsed_msg['username']} wants to talk to you")
         await mqtttrigger('plug4')
 
+# Filter: fires if someone is on the proximity list you made
+#          should be automatic one day
 async def proximity_filter(parsed_msg):
     solarsystem =[name for name in solarsystemlist if name in parsed_msg['message']]
     if solarsystem:
@@ -86,16 +90,27 @@ async def parselog( log ):
                 parsed_msg = await parse_msg(contents)
                 if parsed_msg:
                     print(parsed_msg['timestamp'], parsed_msg['username'],'>',parsed_msg['message'])
+                    # apply this filters
                     await system_locator_filter(parsed_msg)
                     await name_filter(parsed_msg)
                     await proximity_filter(parsed_msg)
+            
 
-          
+async def status():
+    while True:
+        print('-----  STATUS -----')
+        print(f'You are in {current_solarsystem}')
+        print(f'reported ships in your area .. implement me !')
+        await asyncio.sleep(60)
+
 async def main():
     tasks = []        
     for log in chats:
         task = asyncio.create_task( parselog(log) )
         tasks.append(task)
+    # add status 
+    task = asyncio.create_task( status() )
+    tasks.append(task)
     await asyncio.gather(*tasks)
 
 if __name__ == "__main__":
