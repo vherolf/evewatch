@@ -8,7 +8,9 @@ import paho.mqtt as mqtt
 
 today = datetime.now()
 # steam chat logs - change that accodingly to your system
-chatlogdir = Path(Path.home(),'.steam/debian-installation/steamapps/compatdata/8500/pfx/drive_c/users/steamuser/Documents/EVE/logs/Chatlogs')
+#chatlogdir = Path(Path.home(),'.steam/debian-installation/steamapps/compatdata/8500/pfx/drive_c/users/steamuser/Documents/EVE/logs/Chatlogs')
+chatlogdir = list(Path.home().rglob( 'EVE/logs/Chatlogs' )).pop()
+print( "Chat log directory: ", chatlogdir )
 # chat channel you wanna check
 channellist = ['AKIMA WH_','INTEL.RC_','Local_','Heavy Metal Pirates_']
 # check for mentions of this usernames
