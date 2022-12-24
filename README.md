@@ -1,12 +1,12 @@
 # evewatch
 
-Prototype asycnio python based eveonline chat log file parser 
+Prototype asyncio python based eveonline chat log file parser 
 
 
 ## features 
 
-* autmatically finds you chat files
-* parses all chatlog from today you define in a list asynchronous
+* automatically finds your chat files
+* parses all chatlogs asynchronously from today that you define in a list 
 * can search for chars or systems (or anything you want) in chat messages
 * can send mqtt messages if something is found 
 

@@ -7,19 +7,16 @@ import asyncio_mqtt as aiomqtt
 import paho.mqtt as mqtt
 
 today = datetime.now()
-# steam chat logs - change that accodingly to your system
-#chatlogdir = Path(Path.home(),'.steam/debian-installation/steamapps/compatdata/8500/pfx/drive_c/users/steamuser/Documents/EVE/logs/Chatlogs')
 chatlogdir = list(Path.home().rglob( 'EVE/logs/Chatlogs' )).pop()
-print( "Chat log directory: ", chatlogdir )
 # chat channel you wanna check
-channellist = ['AKIMA WH_','INTEL.RC_','Local_','Heavy Metal Pirates_']
+channellist = ['AKIMA WH','INTEL.RC','Local','Heavy Metal Pirates']
 # check for mentions of this usernames
 usernames = ['VHEROLF']
 
 # make the chatlognames from today with pathlib glob and the channellist
 chats=[]
 for channel in channellist:
-    chats += list(chatlogdir.glob(channel+str(today.year) + str(today.month) + str(today.day)+'*'))
+    chats += list(chatlogdir.glob(channel+'_'+str(today.year) + str(today.month) + str(today.day)+'*'))
 
 # solar systems that should be watched 
 solarsystemlist = ['MVCJ-E','MVC','BK4-YC','2-TEGJ','LF-2KP','F-YH5B','K1I1-J','BK4','BK4-']
