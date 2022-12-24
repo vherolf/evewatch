@@ -50,6 +50,25 @@ async def parse_msg(msg):
 
     return None
 
+async def system_locator_filter(parsed_msg):
+    if parsed_msg['username'] == "EVE System":
+        system_change = parsed_msg['message'].find('Channel changed to Local :')
+        if system_change != '-1':
+            current_solarsystem = parsed_msg['message'].split(':')[1]
+            print(f'You are in {current_solarsystem} now')
+
+async def name_filter(parsed_msg):
+    user = [name for name in usernames if name in parsed_msg['message'].upper()]
+    if user:
+        print(f"The Pilot {parsed_msg['username']} wants to talk to you")
+        await mqtttrigger('plug4')
+
+async def proximity_filter(parsed_msg):
+    solarsystem =[name for name in solarsystemlist if name in parsed_msg['message']]
+    if solarsystem:
+        print(f'RUN .. enemy in {solarsystem}')
+        await mqtttrigger('plug3')
+
 chat_line_delimiter = u"\ufeff"
 async def parselog( log ):
     # eve log files are utf-16 encoded
@@ -67,19 +86,10 @@ async def parselog( log ):
                 parsed_msg = await parse_msg(contents)
                 if parsed_msg:
                     print(parsed_msg['timestamp'], parsed_msg['username'],'>',parsed_msg['message'])
-                    solarsystem =[name for name in solarsystemlist if name in parsed_msg['message']]
-                    if solarsystem:
-                        print(f'RUN .. enemy in {solarsystem}')
-                        await mqtttrigger('plug3')
-                    user = [name for name in usernames if name in parsed_msg['message'].upper()]
-                    if user:
-                        print(f"The Pilot {parsed_msg['username']} wants to talk to you")
-                        await mqtttrigger('plug4')
-                    if parsed_msg['username'] == "EVE System":
-                        system_change = parsed_msg['message'].find('Channel changed to Local :')
-                        if system_change != '-1':
-                            current_solarsystem = parsed_msg['message'].split(':')[1]
-                            print(f'You are in {current_solarsystem} now')
+                    await system_locator_filter(parsed_msg)
+                    await name_filter(parsed_msg)
+                    await proximity_filter(parsed_msg)
+
           
 async def main():
     tasks = []        
