@@ -6,6 +6,7 @@ import re
 import asyncio_mqtt as aiomqtt
 import paho.mqtt as mqtt
 
+start_logging = False
 # changed the first time you jump to another system
 current_solarsystem = 'BK4-YC'
 
@@ -52,6 +53,7 @@ async def parse_msg(msg):
 
 # Filter: fires every time you pass a stargate and sets your current solar system
 async def system_locator_filter(parsed_msg):
+    global current_solarsystem
     if parsed_msg['username'] == "EVE System":
         system_change = parsed_msg['message'].find('Channel changed to Local :')
         if system_change != '-1':
@@ -86,7 +88,7 @@ async def parselog( log ):
             contents = line.strip(chat_line_delimiter)
             await asyncio.sleep(0.01)
             
-            if contents:
+            if contents and start_logging:
                 parsed_msg = await parse_msg(contents)
                 if parsed_msg:
                     print(parsed_msg['timestamp'], parsed_msg['username'],'>',parsed_msg['message'])
@@ -96,21 +98,33 @@ async def parselog( log ):
                     await proximity_filter(parsed_msg)
             
 
+async def start():
+    await asyncio.sleep(10)
+    global start_logging
+    start_logging = True
+
 async def status():
     while True:
         print('-----  STATUS -----')
         print(f'You are in {current_solarsystem}')
         print(f'reported ships in your area .. implement me !')
-        await asyncio.sleep(60)
+        await asyncio.sleep(30)
+        
 
 async def main():
     tasks = []        
     for log in chats:
         task = asyncio.create_task( parselog(log) )
         tasks.append(task)
-    # add status 
-    task = asyncio.create_task( status() )
+    
+    # add status monitor 
+    #task = asyncio.create_task( status() )
+    #tasks.append(task)
+    
+    # add start logging after reading the log files
+    task = asyncio.create_task( start() )
     tasks.append(task)
+    
     await asyncio.gather(*tasks)
 
 if __name__ == "__main__":
