@@ -6,9 +6,6 @@ import re
 from dataclasses import dataclass
 import asyncio_mqtt as aiomqtt
 import paho.mqtt as mqtt
-#import graphviz
-
-#g = graphviz.Graph('G', filename='eve-universe.gv', engine='sfdp', strict=True)
 
 start_logging = False
 # changed the first time you jump to another system
@@ -29,14 +26,6 @@ for channel in channellist:
 # solar systems that should be watched 
 solarsystemlist = ['MVCJ-E','MVC','BK4-YC','2-TEGJ','LF-2KP','F-YH5B','K1I1-J','BK4','BK4-']
 
-
-
-async def mqtttrigger(plug="plug3"):
-    async with aiomqtt.Client(hostname="hass.lan",
-                              username="mqttmqtt",
-                              password="mqttmqtt") as client:
-        await client.publish(f"eve/{plug}", payload=f"TOGGLE")
-
 @dataclass(frozen=True, slots=True)
 class Message:
     timestamp: datetime
@@ -45,7 +34,7 @@ class Message:
     #message_hash: str
 
 ## this function is from https://github.com/andrewpmartinez/py-eve-chat-mon (THANK YOU!)
-async def parse_msg(raw_msg):
+async def parse_msg(raw_msg) -> Message:
     line_parser = re.compile('^\s*\[\s(.*?)\s\]\s(.*?)\s>\s(.*?)$', re.DOTALL)
     match = line_parser.match(raw_msg)
     if match:
@@ -60,18 +49,6 @@ async def parse_msg(raw_msg):
         return parsed_msg
 
     return None
-
-# # Filter: fires every time you pass a stargate and sets your current solar system
-# async def system_locator_filter(parsed_msg):
-#     global current_solarsystem
-#     last_solarsystem = current_solarsystem
-#     if parsed_msg['username'] == "EVE System":
-#         system_change = parsed_msg['message'].find('Channel changed to Local :')
-#         if system_change != '-1':
-#             current_solarsystem = parsed_msg['message'].split(':')[1].strip()
-#             print(f'You just jumped to {current_solarsystem}')
-#             g.edge(current_solarsystem, last_solarsystem)
-#             g.render(filename='eve.dot')
 
 # Filter: fires every time you pass a stargate and sets your current solar system
 async def system_locator_filter(msg):
@@ -98,8 +75,16 @@ async def proximity_filter(msg):
         print(f'RUN .. enemy in {solarsystem}')
         await mqtttrigger('plug3')
 
+# Trigger: sends a mqtt message (in this case it toggles a plug with a lamp)
+async def mqtttrigger(plug="plug3"):
+    async with aiomqtt.Client(hostname="hass.lan",
+                              username="mqttmqtt",
+                              password="mqttmqtt") as client:
+        await client.publish(f"eve/{plug}", payload=f"TOGGLE")
+
 
 chat_line_delimiter = u"\ufeff"
+# here is all glued together
 async def parselog( log ):
     # eve log files are utf-16 encoded
     async with aiofiles.open(log, mode='r',encoding="utf-16-le") as f:
@@ -116,24 +101,31 @@ async def parselog( log ):
                 msg = await parse_msg(contents)
                 if msg:
                     print(msg)
-                    # apply this filters
-                    await system_locator_filter(msg)
-                    await name_filter(msg)
-                    await proximity_filter(msg)
+                    # apply filters
+                    match msg.username:
+                        case 'EVE System':
+                            await system_locator_filter(msg)
+                        case 'Message':
+                            pass
+                        case unknown_command:
+                            await proximity_filter(msg)
+                            await name_filter(msg)
             
 
-async def start():
-    await asyncio.sleep(0)
-    global start_logging
-    start_logging = True
-
+# status report is you want regular reports
 async def status():
     while True:
         print('-----  STATUS -----')
         print(f'You are in {current_solarsystem}')
-        print(f'reported ships in your area .. implement me !')
+        print(f'reported ships in your area 3 jumps away.. implement me !')
+        print(f'reported ships in your area 6 jumps away.. implement me !')
         await asyncio.sleep(30)
-        
+
+# delay logging while all old messages from chat logs are parsed
+async def startup_log_delay(time=10):
+    await asyncio.sleep(time)
+    global start_logging
+    start_logging = True
 
 async def main():
     tasks = []        
@@ -146,10 +138,10 @@ async def main():
     #tasks.append(task)
     
     # add start logging after reading the log files
-    task = asyncio.create_task( start() )
+    task = asyncio.create_task( startup_log_delay() )
     tasks.append(task)
     
-    await asyncio.gather(*tasks)
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 if __name__ == "__main__":
     asyncio.run(main())
