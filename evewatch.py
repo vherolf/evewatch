@@ -27,34 +27,9 @@ class Channel:
     channel: str
     path: Path
 
+# all chatfiles from today
 chatfiles = chatlogdir.glob( '*'+'_'+str(today.year) + str(today.month) + str(today.day)+'*.txt' )
 
-@dataclass(frozen=True, slots=True)
-class Message:
-    timestamp: datetime
-    username: str
-    message: str
-    channel: str
-    #message_hash: str
-
-## this function is from https://github.com/andrewpmartinez/py-eve-chat-mon (THANK YOU!)
-async def parse_msg(raw_msg, channel) -> Message:
-    line_parser = re.compile('^\s*\[\s(.*?)\s\]\s(.*?)\s>\s(.*?)$', re.DOTALL)
-    match = line_parser.match(raw_msg)
-    if match:
-        timestamp = match.group(1)
-        username = match.group(2)
-        message = match.group(3)
-        timestamp = datetime.strptime(timestamp, "%Y.%m.%d %H:%M:%S")
-
-        parsed_msg = Message(timestamp = timestamp,
-                      username = username,
-                      message = message,
-                      channel = channel)
-        print(parsed_msg)
-        return parsed_msg
-
-    return None
 
 # Filter: fires every time you pass a stargate and sets your current solar system
 async def system_locator_filter(msg):
@@ -91,8 +66,36 @@ async def mqtttrigger(plug="plug3"):
         await client.publish(f"eve/{plug}", payload=f"TOGGLE")
 
 
-chat_line_delimiter = u"\ufeff"
+
+@dataclass(frozen=True, slots=True)
+class Message:
+    timestamp: datetime
+    username: str
+    message: str
+    channel: Channel
+
+## this function is from https://github.com/andrewpmartinez/py-eve-chat-mon (THANK YOU!)
+async def parse_msg(raw_msg, channel) -> Message:
+    line_parser = re.compile('^\s*\[\s(.*?)\s\]\s(.*?)\s>\s(.*?)$', re.DOTALL)
+    match = line_parser.match(raw_msg)
+    if match:
+        timestamp = match.group(1)
+        username = match.group(2)
+        message = match.group(3)
+        timestamp = datetime.strptime(timestamp, "%Y.%m.%d %H:%M:%S")
+
+        parsed_msg = Message(timestamp = timestamp,
+                      username = username,
+                      message = message,
+                      channel = channel)
+        print(parsed_msg)
+        return parsed_msg
+
+    return None
+
+
 # here is all glued together
+chat_line_delimiter = u"\ufeff"
 async def parse_log( chat ):
     # eve log files are utf-16 encoded
     async with aiofiles.open(chat.path, mode='r',encoding="utf-16-le") as f:
@@ -106,7 +109,7 @@ async def parse_log( chat ):
             await asyncio.sleep(0.01)
             
             if contents and start_logging:
-                msg = await parse_msg(raw_msg=contents, channel=chat.channel)
+                msg = await parse_msg(raw_msg=contents, channel=chat)
                 # apply filters
                 match msg:
                     case Message(username='EVE System'):
