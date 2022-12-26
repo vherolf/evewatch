@@ -1,3 +1,7 @@
-aiofiles
-asyncio-mqtt
-paho-mqtt
+aiofiles==22.1.0
+asyncio-mqtt==0.16.1
+cffi==1.15.1
+glfw==2.5.5
+paho-mqtt==1.6.1
+pycparser==2.21
+vulkan==1.1.99.1

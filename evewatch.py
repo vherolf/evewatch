@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import asyncio_mqtt as aiomqtt
 import paho.mqtt as mqtt
 
+# at startup loggind is disabled. (otherwise all old log files entries are filtered)
 start_logging = False
 # changed the first time you jump to another system
 current_solarsystem = ''
@@ -14,6 +15,7 @@ current_solarsystem = ''
 mqtt = True
 
 today = datetime.now()
+# searches you chatlog directory
 chatlogdir = list(Path.home().rglob( 'EVE/logs/Chatlogs' )).pop()
 
 # check for mentions of this usernames
@@ -105,17 +107,17 @@ async def parse_log( chat ):
         while True:
             line = await f.readline()
             # remove the weird UTF-16 thingy
-            contents = line.strip(chat_line_delimiter)
+            raw_msg = line.strip(chat_line_delimiter)
             await asyncio.sleep(0.01)
             
-            if contents and start_logging:
-                msg = await parse_msg(raw_msg=contents, channel=chat)
+            if raw_msg and start_logging:
+                msg = await parse_msg(raw_msg=raw_msg, channel=chat)
                 # apply filters
                 match msg:
                     case Message(username='EVE System'):
                         await system_locator_filter(msg)
                     case Message(username='Message'):
-                        pass
+                        print(msg.username, msg.message)
                     case _:
                         await proximity_filter(msg)
                         await name_filter(msg)
