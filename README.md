@@ -13,30 +13,35 @@ Asyncio-based EVE Online intel monitor. Watches your chat log files in real time
 
 ---
 
-## Requirements
-
-- Python 3.10+
-- EVE Online running on the same machine (chat logs written locally)
-
-Install dependencies:
+## Install / Update
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+curl -fsSL https://raw.githubusercontent.com/vherolf/evewatch/main/install.sh | bash
 ```
+
+Run the same command to update — it re-downloads the files and refreshes the venv. Your config at `~/.evewatch.json` is never touched on update.
+
+On first install the script opens `~/.evewatch.json` in your terminal editor with step-by-step instructions for getting the credentials.
+
+**Requirements:** Python 3.10+, curl
 
 ---
 
 ## Configuration
 
-Open `evewatch.py` and edit the block at the top:
+All configuration lives in `~/.evewatch.json`. On the first run the file is created automatically with defaults — edit it, then run again.
 
-```python
-CLIENT_ID    = ""    # your ESI app client ID
-CHARACTER_ID = 0     # your EVE character ID
-watch_jumps  = 5     # alert if hostile is within this many jumps
+```json
+{
+  "client_id":    "your_esi_client_id",
+  "character_id": 123456789,
+  "watch_jumps":  5,
+  "usernames":    ["YourCharacterName"],
+  "token":        {}
+}
 ```
+
+The `token` field is managed automatically — evewatch writes and refreshes it. Do not edit it manually.
 
 ### 1. Create an ESI application
 
@@ -45,25 +50,27 @@ watch_jumps  = 5     # alert if hostile is within this many jumps
 3. Set **Connection Type** to `Authentication & API Access`
 4. Add the scope: `esi-location.read_location.v1`
 5. Set the **Callback URL** to: `http://localhost:8765/callback`
-6. Save — copy the **Client ID** into `CLIENT_ID`
+6. Save — copy the **Client ID** into `client_id`
 
 No client secret is needed (the app uses PKCE, a public OAuth2 flow).
 
 ### 2. Find your Character ID
 
 In the EVE client: **Esc → About → Character ID**, or look it up on [zkillboard.com](https://zkillboard.com).  
-Paste the number into `CHARACTER_ID`.
+Paste the number into `character_id`.
 
 ### 3. Set your jump range
 
-```python
-watch_jumps = 5   # systems within 5 jumps will trigger alerts
+```json
+"watch_jumps": 5
 ```
+
+Systems within this many jumps trigger a `RUN!` alert. Systems further away are shown as `ok (Nj)`.
 
 ### 4. Configure your username
 
-```python
-usernames = ['YourCharacterName']
+```json
+"usernames": ["YourCharacterName"]
 ```
 
 ---
@@ -117,10 +124,3 @@ Systems beyond `watch_jumps` are reported as `ok (Nj)` — useful to see the int
 
 EVE SSO uses OAuth2 with PKCE (no client secret). On first run a local HTTP server listens on port 8765 to catch the callback. The access token is refreshed automatically using the stored refresh token.
 
----
-
-## Nice to have
-
-- Filter out `clear` messages from intel (don't alert on "MVCJ-E clear")
-- Desktop notification on proximity alert
-- Status overlay showing watched system count and current location

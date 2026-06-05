@@ -13,14 +13,48 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import aiohttp
 
 # ---------------------------------------------------------------------------
-# Configuration — edit these before running
-# ---------------------------------------------------------------------------
-CLIENT_ID    = ""    # create a public app at https://developers.eveonline.com
-CHARACTER_ID = 0     # your EVE character ID (Settings > About in the EVE client)
-watch_jumps  = 5     # alert if hostile is within this many jumps
+# Config file  (~/.evewatch.json)
 # ---------------------------------------------------------------------------
 
-TOKEN_FILE   = Path.home() / '.evewatch_token'
+CONFIG_FILE = Path.home() / '.evewatch.json'
+
+_DEFAULT_CONFIG = {
+    "client_id":    "",
+    "character_id": 0,
+    "watch_jumps":  5,
+    "usernames":    ["YourCharacterName"],
+    "token":        {}
+}
+
+
+def _load_config() -> dict:
+    if not CONFIG_FILE.exists():
+        CONFIG_FILE.write_text(json.dumps(_DEFAULT_CONFIG, indent=2))
+        print(f"Config file created: {CONFIG_FILE}")
+        print("Fill in client_id, character_id, and usernames, then run again.")
+        raise SystemExit(0)
+    cfg = json.loads(CONFIG_FILE.read_text())
+    if not cfg.get("client_id") or not cfg.get("character_id"):
+        print(f"ERROR: client_id and character_id must be set in {CONFIG_FILE}")
+        raise SystemExit(1)
+    return cfg
+
+
+def _save_config(cfg: dict):
+    CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
+
+
+cfg = _load_config()
+
+CLIENT_ID    : str       = cfg["client_id"]
+CHARACTER_ID : int       = cfg["character_id"]
+watch_jumps  : int       = cfg.get("watch_jumps", 5)
+usernames    : list[str] = cfg.get("usernames", [])
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
 ESI_BASE     = "https://esi.evetech.net/latest"
 ESI_AUTH     = "https://login.eveonline.com"
 REDIRECT_URI = "http://localhost:8765/callback"
@@ -29,27 +63,25 @@ SCOPES       = "esi-location.read_location.v1"
 today      = datetime.now()
 chatlogdir = list(Path.home().rglob('EVE/logs/Chatlogs')).pop()
 
-# check for mentions of these usernames in chat
-usernames = ['Vherolf']
+# ---------------------------------------------------------------------------
+# Runtime state
+# ---------------------------------------------------------------------------
 
-# runtime state
 current_solarsystem_id: int = 0
 current_solarsystem: str    = ''
 
 # stargate graph cache: system_id -> frozenset of neighbour system IDs
-# populated lazily as we explore — each system is fetched at most once
 adjacency_cache: dict[int, frozenset[int]] = {}
 
 # name caches populated alongside the adjacency cache
 id_to_name: dict[int, str] = {}
 name_to_id: dict[str, int] = {}
 
-# active watch list: system_name -> jump_distance from current position
-# rebuilt every time you jump to a new system
+# active watch list: system_name -> jump_distance, rebuilt on every jump
 watched_systems: dict[str, int] = {}
 
 esi_session: aiohttp.ClientSession | None = None
-esi_token: dict = {}
+esi_token: dict = cfg.get("token", {})
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +115,6 @@ def _pkce_pair() -> tuple[str, str]:
 
 
 async def _catch_callback(expected_state: str) -> str:
-    """Start a one-shot local HTTP server and wait for the OAuth redirect."""
     loop = asyncio.get_event_loop()
     code_future: asyncio.Future[str] = loop.create_future()
 
@@ -105,6 +136,12 @@ async def _catch_callback(expected_state: str) -> str:
     return await code_future
 
 
+def _persist_token(token: dict):
+    current = json.loads(CONFIG_FILE.read_text())
+    current['token'] = token
+    _save_config(current)
+
+
 async def _exchange_code(code: str, verifier: str) -> dict:
     async with esi_session.post(f"{ESI_AUTH}/v2/oauth/token", data={
         'grant_type':    'authorization_code',
@@ -113,7 +150,7 @@ async def _exchange_code(code: str, verifier: str) -> dict:
         'code_verifier': verifier,
     }) as resp:
         token = await resp.json()
-    TOKEN_FILE.write_text(json.dumps(token))
+    _persist_token(token)
     return token
 
 
@@ -125,19 +162,19 @@ async def _refresh(refresh_tok: str) -> dict | None:
     }) as resp:
         if resp.status == 200:
             token = await resp.json()
-            TOKEN_FILE.write_text(json.dumps(token))
+            _persist_token(token)
             return token
     return None
 
 
 async def authenticate():
     global esi_token
-    if TOKEN_FILE.exists():
-        saved     = json.loads(TOKEN_FILE.read_text())
-        refreshed = await _refresh(saved.get('refresh_token', ''))
+    saved_token = esi_token or {}
+    if saved_token.get('refresh_token'):
+        refreshed = await _refresh(saved_token['refresh_token'])
         if refreshed:
             esi_token = refreshed
-            print("ESI: token refreshed from saved file")
+            print("ESI: token refreshed")
             return
 
     verifier, challenge = _pkce_pair()
@@ -169,7 +206,6 @@ def _auth_headers() -> dict:
 
 
 async def _fetch_neighbors(system_id: int) -> frozenset[int]:
-    """Fetch the direct neighbours of a system and populate name caches."""
     async with esi_session.get(f"{ESI_BASE}/v4/universe/systems/{system_id}/") as resp:
         data = await resp.json()
 
@@ -177,7 +213,6 @@ async def _fetch_neighbors(system_id: int) -> frozenset[int]:
     id_to_name[system_id] = name
     name_to_id[name]      = system_id
 
-    # resolve each stargate to its destination system ID in parallel
     stargate_ids = data.get('stargates', [])
 
     async def _dest(sg_id: int) -> int:
@@ -192,20 +227,17 @@ async def _fetch_neighbors(system_id: int) -> frozenset[int]:
 
 
 async def get_neighbors(system_id: int) -> frozenset[int]:
-    """Return neighbours from cache, fetching from ESI only if needed."""
     if system_id not in adjacency_cache:
         await _fetch_neighbors(system_id)
     return adjacency_cache[system_id]
 
 
 async def update_watch_list(origin_id: int):
-    """BFS out to watch_jumps from origin; rebuild watched_systems."""
     global watched_systems
 
-    # BFS — visit each frontier level in parallel
     visited  = {origin_id}
     frontier = {origin_id}
-    distance: dict[int, int] = {}   # system_id -> jump distance
+    distance: dict[int, int] = {}
 
     for jump in range(1, watch_jumps + 1):
         neighbour_sets = await asyncio.gather(*[get_neighbors(sid) for sid in frontier])
@@ -217,8 +249,6 @@ async def update_watch_list(origin_id: int):
         for sid in frontier:
             distance[sid] = jump
 
-    # ensure all discovered systems have names (cache may have gaps for unvisited
-    # nodes that were added only as neighbours, not yet fetched themselves)
     uncached = [sid for sid in distance if sid not in id_to_name]
     if uncached:
         await asyncio.gather(*[_fetch_neighbors(sid) for sid in uncached])
@@ -253,7 +283,6 @@ async def poll_location():
                 system_id = data.get('solar_system_id')
                 if system_id and system_id != current_solarsystem_id:
                     current_solarsystem_id = system_id
-                    # fetch name if not already cached
                     if system_id not in id_to_name:
                         await _fetch_neighbors(system_id)
                     current_solarsystem = id_to_name.get(system_id, str(system_id))
@@ -307,7 +336,6 @@ async def parse_msg(raw_msg, channel) -> Message | None:
 chat_line_delimiter = u"﻿"
 
 async def parse_log(chat):
-    # utf-16 encoded EVE log; seek to end to skip historical entries
     async with aiofiles.open(chat.path, mode='r', encoding="utf-16-le") as f:
         await f.seek(0, 2)
         while True:
@@ -319,7 +347,7 @@ async def parse_log(chat):
                 if msg:
                     match msg:
                         case Message(username='EVE System'):
-                            pass  # location handled by ESI polling
+                            pass
                         case _:
                             await proximity_filter(msg)
                             await name_filter(msg)
@@ -339,10 +367,6 @@ async def status():
 
 async def main():
     global esi_session
-
-    if not CLIENT_ID or not CHARACTER_ID:
-        print("ERROR: Set CLIENT_ID and CHARACTER_ID in the config section at the top of the file.")
-        return
 
     chatfiles = chatlogdir.glob(f"*_{today.strftime('%Y%m%d')}*.txt")
 
